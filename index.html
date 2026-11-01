@@ -499,7 +499,7 @@
   <img class="spIcon" src="icon.png" alt="">
   <div class="spName">Sunglow</div>
   <div class="spSub">朝霞 · 晚霞 · 火烧云</div>
-  <div class="spVer" id="spVer">v1.08</div>
+  <div class="spVer" id="spVer">v1.09</div>
 </div>
 
 <script>
@@ -531,7 +531,7 @@
 <header>
   <div>
     <h1>Sunglow</h1>
-    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.08</div>
+    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.09</div>
   </div>
   <div class="hbtns">
     <button class="locBtn" id="locBtn">
@@ -613,7 +613,7 @@
 
     <div class="card">
       <h2>关于</h2>
-      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.08</b></div>
+      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.09</b></div>
       <div class="kv"><span>开发者</span><b>DeepSeek · BobLi（只提要求）</b></div>
       <div class="kv"><span>联系 QQ</span><b id="qqCopy" class="copyQQ">3253132384</b></div>
       <div class="kv"><span>获取更新</span><b>加 QQ 3253132384 获取新版本</b></div>
@@ -1161,9 +1161,12 @@ function cardHTML(kind, when, score, m) {
     srcLine = '<div class="srcTag">' + (S.model === 'mix' ? '混合模式（等待数据）' : (modelOf(S.model).name + ' 单模式')) + '</div>';
   }
   if (en) {
-    var bits = en.parts.map(function (x) { return x.name + ' ' + probOf(x.v) + '%'; }).join(' · ');
-    var only = en.parts.length < 2 ? '　（另一源缺失，暂按单源）' : '';
-    srcLine = '<div class="srcTag">综合 ' + en.parts.length + ' 源（各 50%）：' + bits + only + '</div>';
+    // Golden Hour 只是展示，不参与火烧云概率
+    var real = en.parts.filter(function (x) { return x.name !== 'Golden Hour'; });
+    var bits = real.map(function (x) { return x.name + ' ' + probOf(x.v) + '%'; }).join(' · ');
+    var each = real.length ? Math.round(100 / real.length) : 0;
+    var only = real.length < 2 ? '　（另一源缺失，暂按单源）' : '';
+    srcLine = '<div class="srcTag">综合 ' + real.length + ' 源（各 ' + each + '%）：' + bits + only + '</div>';
   }
   var prob = probOf(score);
   return '<div class="skyCard ' + kind + '">'
@@ -3906,9 +3909,10 @@ function renderWind() {
 
 
 /* ---------- 版本与更新记录 ---------- */
-var APP_VERSION = '1.08';
+var APP_VERSION = '1.09';
 /* 日期一律以实际发版当天为准；写之前先看系统时间，别猜 */
 var CHANGELOG = [
+  { v:'1.09', d:'2026-11-01', items:['修复卡片仍写「各 50%」，权重标签按实际源数计算（三源各 33%）'] },
   { v:'1.08', d:'2026-11-01', items:['网页版加入版本自检，线上有新版本时会提示刷新'] },
   { v:'1.07', d:'2026-11-01', items:['修正更新内容里 1.02–1.06 的日期（误写成次日）'] },
   { v:'1.06', d:'2026-11-01', items:['定位缓存限制 30 分钟，去别处不会再用旧位置','移动超过 30 km 会提示位置已更新','开发者署名改为「只提要求」'] },
