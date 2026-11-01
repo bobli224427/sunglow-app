@@ -499,7 +499,7 @@
   <img class="spIcon" src="icon.png" alt="">
   <div class="spName">Sunglow</div>
   <div class="spSub">朝霞 · 晚霞 · 火烧云</div>
-  <div class="spVer" id="spVer">v1.07</div>
+  <div class="spVer" id="spVer">v1.08</div>
 </div>
 
 <script>
@@ -531,7 +531,7 @@
 <header>
   <div>
     <h1>Sunglow</h1>
-    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.07</div>
+    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.08</div>
   </div>
   <div class="hbtns">
     <button class="locBtn" id="locBtn">
@@ -613,7 +613,7 @@
 
     <div class="card">
       <h2>关于</h2>
-      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.07</b></div>
+      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.08</b></div>
       <div class="kv"><span>开发者</span><b>DeepSeek · BobLi（只提要求）</b></div>
       <div class="kv"><span>联系 QQ</span><b id="qqCopy" class="copyQQ">3253132384</b></div>
       <div class="kv"><span>获取更新</span><b>加 QQ 3253132384 获取新版本</b></div>
@@ -953,6 +953,7 @@ function setLang(lang) {
   render();
   if (S.airNow) renderAir();
   renderHistory();
+  setTimeout(checkWebUpdate, 2500);
 
   if (lang !== 'zh') localizeAll();
 }
@@ -3905,9 +3906,10 @@ function renderWind() {
 
 
 /* ---------- 版本与更新记录 ---------- */
-var APP_VERSION = '1.07';
+var APP_VERSION = '1.08';
 /* 日期一律以实际发版当天为准；写之前先看系统时间，别猜 */
 var CHANGELOG = [
+  { v:'1.08', d:'2026-11-01', items:['网页版加入版本自检，线上有新版本时会提示刷新'] },
   { v:'1.07', d:'2026-11-01', items:['修正更新内容里 1.02–1.06 的日期（误写成次日）'] },
   { v:'1.06', d:'2026-11-01', items:['定位缓存限制 30 分钟，去别处不会再用旧位置','移动超过 30 km 会提示位置已更新','开发者署名改为「只提要求」'] },
   { v:'1.05', d:'2026-11-01', items:['修复能见度长期卡在 10 km：CAVOK 按「≥10」处理并结合推算值'] },
@@ -4291,6 +4293,31 @@ document.addEventListener('keydown', function (e) {
   if (e.key === ' ' || e.key === 'ArrowUp') { e.preventDefault(); gameJump(); }
   if (e.key === 'Escape') closeDino();
 });
+
+/* 网页版更新自检：对比线上 ver.txt，发现新版本就提示刷新 */
+function cmpVer(a, b) {
+  var x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
+  for (var i = 0; i < Math.max(x.length, y.length); i++) {
+    var m = x[i] || 0, n = y[i] || 0;
+    if (m > n) return 1;
+    if (m < n) return -1;
+  }
+  return 0;
+}
+
+function checkWebUpdate() {
+  if (!/^https?:$/.test(location.protocol)) return;   // 本地文件不查
+  fetch('ver.txt?_=' + Date.now(), { cache: 'no-store' })
+    .then(function (r) { return r.ok ? r.text() : ''; })
+    .then(function (t) {
+      var v = String(t || '').trim();
+      if (!v || !/^[0-9.]+$/.test(v)) return;
+      if (cmpVer(v, APP_VERSION) > 0) {
+        showToast('已发布 v' + v + '，下拉刷新即可更新');
+      }
+    })
+    .catch(function () {});
+}
 
 /* 版本号连点 5 下触发（全局委托，元素重绘也不会失效） */
 var VER_CLICKS = 0, VER_TIMER = 0;
