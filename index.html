@@ -499,7 +499,7 @@
   <img class="spIcon" src="icon.png" alt="">
   <div class="spName">Sunglow</div>
   <div class="spSub">朝霞 · 晚霞 · 火烧云</div>
-  <div class="spVer" id="spVer">v1.13</div>
+  <div class="spVer" id="spVer">v1.14</div>
 </div>
 
 <script>
@@ -531,7 +531,7 @@
 <header>
   <div>
     <h1>Sunglow</h1>
-    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.13</div>
+    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.14</div>
   </div>
   <div class="hbtns">
     <button class="locBtn" id="locBtn">
@@ -613,11 +613,11 @@
 
     <div class="card">
       <h2>关于</h2>
-      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.13</b></div>
+      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.14</b></div>
       <div class="kv"><span>开发者</span><b>DeepSeek · BobLi（只提要求）</b></div>
       <div class="kv"><span>联系 QQ</span><b id="qqCopy" class="copyQQ">3253132384</b></div>
-      <div class="kv"><span>获取更新</span><b>加 QQ 3253132384 获取新版本</b></div>
-      <div class="srcDesc">点上面的 QQ 号即可复制；新版本会先在 QQ 上告诉你。</div>
+      <div class="kv"><span>网页版</span><a class="link" href="https://bobli224427.github.io/sunglow-app/">bobli224427.github.io/sunglow-app</a></div>
+      <div class="srcDesc">网页版永远是最新的，手机浏览器点开就能用；APK 更新还是加上面的 QQ。点 QQ 号即可复制。</div>
 
       <div class="fold" id="foldSrc">
         <div class="foldHead">
@@ -830,12 +830,12 @@ var I18N = {
     '加载超时，换个网络或稍后重试':'Timed out, try again','换个位置':'Change location',
     '定位中…':'Locating…','定位失败':'Location failed',
     '外观':'Appearance','主题':'Theme','深色':'Dark','浅色':'Light','语言 / Language':'Language',
-    '关于':'About','版本':'Version','开发者':'Developer','联系 QQ':'QQ','获取更新':'Updates',
+    '关于':'About','版本':'Version','开发者':'Developer','联系 QQ':'QQ','网页版':'Web version',
     '数据来源':'Data sources','更新内容':'Changelog','霞光评分':'Glow score','第三方 · Golden Hour':'Third-party · Golden Hour',
     '天气数据':'Weather data','模式 · ECMWF IFS':'Model · ECMWF IFS','模式 · GFS':'Model · GFS',
     '地名解析':'Geocoding','地图底图':'Map tiles',
     '加 QQ 3253132384 获取新版本':'Add QQ 3253132384 for updates',
-    '点上面的 QQ 号即可复制；新版本会先在 QQ 上告诉你。':'Tap the QQ number to copy it.',
+    '网页版永远是最新的，手机浏览器点开就能用；APK 更新还是加上面的 QQ。点 QQ 号即可复制。':'The web version is always current — just open it in your phone browser. Add the QQ above for APK updates. Tap the QQ number to copy it.',
     '云底/云顶按低云 0.6–2 km、中云 2.5–6 km、高云 6.5–11.5 km 分层估算。':'Cloud base/top estimated from layer heights.',
     '数据来源：':'Source: ','天气':'Weather','能见':'Vis',
     '风':'Wind','现在':'Now','朝':'Dawn','晚':'Dusk',
@@ -870,12 +870,12 @@ var I18N = {
     '加载超时，换个网络或稍后重试':'タイムアウトしました','换个位置':'場所を変える',
     '定位中…':'位置取得中…','定位失败':'位置取得失敗',
     '外观':'外観','主题':'テーマ','深色':'ダーク','浅色':'ライト','语言 / Language':'言語',
-    '关于':'このアプリ','版本':'バージョン','开发者':'開発','联系 QQ':'QQ','获取更新':'更新情報',
+    '关于':'このアプリ','版本':'バージョン','开发者':'開発','联系 QQ':'QQ','网页版':'Web版',
     '数据来源':'データ出典','更新内容':'更新履歴','霞光评分':'スコア','第三方 · Golden Hour':'外部 · Golden Hour',
     '天气数据':'気象データ','模式 · ECMWF IFS':'モデル · ECMWF','模式 · GFS':'モデル · GFS',
     '地名解析':'地名解決','地图底图':'地図タイル',
     '加 QQ 3253132384 获取新版本':'QQ 3253132384 で更新情報',
-    '点上面的 QQ 号即可复制；新版本会先在 QQ 上告诉你。':'QQ番号をタップでコピーできます。',
+    '网页版永远是最新的，手机浏览器点开就能用；APK 更新还是加上面的 QQ。点 QQ 号即可复制。':'Web版は常に最新です。スマホのブラウザでそのまま開けます。APKは上のQQへ。QQ番号をタップでコピー。',
     '云底/云顶按低云 0.6–2 km、中云 2.5–6 km、高云 6.5–11.5 km 分层估算。':'雲底・雲頂は層高度から推定。',
     '数据来源：':'出典：','天气':'天気','能见':'視程',
     '风':'風','现在':'現在','朝':'朝','晚':'夕',
@@ -3936,9 +3936,10 @@ function renderWind() {
 
 
 /* ---------- 版本与更新记录 ---------- */
-var APP_VERSION = '1.13';
+var APP_VERSION = '1.14';
 /* 日期一律以实际发版当天为准；写之前先看系统时间，别猜 */
 var CHANGELOG = [
+  { v:'1.14', d:'2026-11-02', items:['关于页「获取更新」改为网页版链接，手机浏览器点开即是最新版'] },
   { v:'1.13', d:'2026-11-02', items:['刷新提示统一为「太快了，稍后重试」，并加 5 秒点击间隔'] },
   { v:'1.12', d:'2026-11-02', items:['刷新改为「成功才替换」：再次刷新失败时保留上一份数据，不再清空'] },
   { v:'1.11', d:'2026-11-02', items:['修复能见度卡在固定值：PM2.5 缺失时不再假装 10μg/m³，改为只用 AOD 或直接显示未知'] },
