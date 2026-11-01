@@ -499,7 +499,7 @@
   <img class="spIcon" src="icon.png" alt="">
   <div class="spName">Sunglow</div>
   <div class="spSub">朝霞 · 晚霞 · 火烧云</div>
-  <div class="spVer" id="spVer">v1.10</div>
+  <div class="spVer" id="spVer">v1.11</div>
 </div>
 
 <script>
@@ -531,7 +531,7 @@
 <header>
   <div>
     <h1>Sunglow</h1>
-    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.10</div>
+    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.11</div>
   </div>
   <div class="hbtns">
     <button class="locBtn" id="locBtn">
@@ -613,7 +613,7 @@
 
     <div class="card">
       <h2>关于</h2>
-      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.10</b></div>
+      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.11</b></div>
       <div class="kv"><span>开发者</span><b>DeepSeek · BobLi（只提要求）</b></div>
       <div class="kv"><span>联系 QQ</span><b id="qqCopy" class="copyQQ">3253132384</b></div>
       <div class="kv"><span>获取更新</span><b>加 QQ 3253132384 获取新版本</b></div>
@@ -2356,35 +2356,44 @@ function visHour(isoTime, isNow) {
 
 /* 由 PM2.5 与湿度推算能见度（模型给的能见度多为常数，不可靠） */
 function visEstimate(pm25, rh, aod) {
-  if (pm25 == null && aod == null) return null;
-  // PM2.5 → 能见度基准（km），分段线性
-  var pts = [[5, 28], [10, 20], [20, 15], [35, 10], [75, 6], [150, 3.5], [250, 2], [400, 1.2]];
-  pm25 = pm25 == null ? 10 : pm25;
-  var v;
-  if (pm25 <= pts[0][0]) v = pts[0][1];
-  else if (pm25 >= pts[pts.length - 1][0]) v = pts[pts.length - 1][1];
-  else {
-    for (var i = 0; i < pts.length - 1; i++) {
-      if (pm25 >= pts[i][0] && pm25 <= pts[i + 1][0]) {
-        var t = (pm25 - pts[i][0]) / (pts[i + 1][0] - pts[i][0]);
-        v = pts[i][1] + (pts[i + 1][1] - pts[i][1]) * t;
-        break;
+  var hasPm = pm25 != null && isFinite(pm25);
+  var hasAod = aod != null && isFinite(aod) && aod > 0;
+  if (!hasPm && !hasAod) return null;   // 两个都没有就不编数字
+
+  var v = null;
+
+  // ① PM2.5 → 能见度基准（km），分段线性
+  if (hasPm) {
+    var pts = [[5, 28], [10, 20], [20, 15], [35, 10], [75, 6], [150, 3.5], [250, 2], [400, 1.2]];
+    if (pm25 <= pts[0][0]) v = pts[0][1];
+    else if (pm25 >= pts[pts.length - 1][0]) v = pts[pts.length - 1][1];
+    else {
+      for (var i = 0; i < pts.length - 1; i++) {
+        if (pm25 >= pts[i][0] && pm25 <= pts[i + 1][0]) {
+          var t = (pm25 - pts[i][0]) / (pts[i + 1][0] - pts[i][0]);
+          v = pts[i][1] + (pts[i + 1][1] - pts[i][1]) * t;
+          break;
+        }
       }
     }
   }
-  // AOD 封顶：整层气溶胶越厚，地面能见度上限越低
-  if (aod != null && aod > 0) {
+
+  // ② AOD 封顶：整层气溶胶越厚，地面能见度上限越低
+  if (hasAod) {
     var aodVis = 40 * Math.exp(-aod / 0.35);
-    if (aodVis < v) v = aodVis;
+    v = (v == null) ? aodVis : Math.min(v, aodVis);
   }
 
-  // 湿度修正：高湿会让颗粒吸水膨胀，能见度进一步下降
-  if (rh != null) {
+  if (v == null) return null;
+
+  // ③ 湿度修正：颗粒吸湿膨胀会让能见度进一步下降
+  if (rh != null && isFinite(rh)) {
     if (rh >= 95) v *= 0.55;
     else if (rh >= 90) v *= 0.65;
     else if (rh >= 85) v *= 0.78;
     else if (rh >= 75) v *= 0.9;
   }
+
   return Math.max(0.3, Math.round(v * 10) / 10);
 }
 
@@ -3909,9 +3918,10 @@ function renderWind() {
 
 
 /* ---------- 版本与更新记录 ---------- */
-var APP_VERSION = '1.10';
+var APP_VERSION = '1.11';
 /* 日期一律以实际发版当天为准；写之前先看系统时间，别猜 */
 var CHANGELOG = [
+  { v:'1.11', d:'2026-11-02', items:['修复能见度卡在固定值：PM2.5 缺失时不再假装 10μg/m³，改为只用 AOD 或直接显示未知'] },
   { v:'1.10', d:'2026-11-02', items:['网页版发现新版本会自动跳转到新地址，不用手动清缓存'] },
   { v:'1.09', d:'2026-11-01', items:['修复卡片仍写「各 50%」，权重标签按实际源数计算（三源各 33%）'] },
   { v:'1.08', d:'2026-11-01', items:['网页版加入版本自检，线上有新版本时会提示刷新'] },
