@@ -499,7 +499,7 @@
   <img class="spIcon" src="icon.png" alt="">
   <div class="spName">Sunglow</div>
   <div class="spSub">朝霞 · 晚霞 · 火烧云</div>
-  <div class="spVer" id="spVer">v1.09</div>
+  <div class="spVer" id="spVer">v1.10</div>
 </div>
 
 <script>
@@ -531,7 +531,7 @@
 <header>
   <div>
     <h1>Sunglow</h1>
-    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.09</div>
+    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.10</div>
   </div>
   <div class="hbtns">
     <button class="locBtn" id="locBtn">
@@ -613,7 +613,7 @@
 
     <div class="card">
       <h2>关于</h2>
-      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.09</b></div>
+      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.10</b></div>
       <div class="kv"><span>开发者</span><b>DeepSeek · BobLi（只提要求）</b></div>
       <div class="kv"><span>联系 QQ</span><b id="qqCopy" class="copyQQ">3253132384</b></div>
       <div class="kv"><span>获取更新</span><b>加 QQ 3253132384 获取新版本</b></div>
@@ -3909,9 +3909,10 @@ function renderWind() {
 
 
 /* ---------- 版本与更新记录 ---------- */
-var APP_VERSION = '1.09';
+var APP_VERSION = '1.10';
 /* 日期一律以实际发版当天为准；写之前先看系统时间，别猜 */
 var CHANGELOG = [
+  { v:'1.10', d:'2026-11-01', items:['网页版发现新版本会自动跳转到新地址，不用手动清缓存'] },
   { v:'1.09', d:'2026-11-01', items:['修复卡片仍写「各 50%」，权重标签按实际源数计算（三源各 33%）'] },
   { v:'1.08', d:'2026-11-01', items:['网页版加入版本自检，线上有新版本时会提示刷新'] },
   { v:'1.07', d:'2026-11-01', items:['修正更新内容里 1.02–1.06 的日期（误写成次日）'] },
@@ -4316,9 +4317,20 @@ function checkWebUpdate() {
     .then(function (t) {
       var v = String(t || '').trim();
       if (!v || !/^[0-9.]+$/.test(v)) return;
-      if (cmpVer(v, APP_VERSION) > 0) {
-        showToast('已发布 v' + v + '，下拉刷新即可更新');
+      if (cmpVer(v, APP_VERSION) <= 0) return;         // 已经是最新
+
+      // 已经是带最新版本参数打开过了，就不再跳（防止死循环）
+      var q = location.search || '';
+      if (q.indexOf('v=' + v) >= 0) {
+        showToast('已是最新 v' + v);
+        return;
       }
+
+      // 自动跳到一个带版本号的新地址，绕过 GitHub Pages 的 10 分钟缓存
+      showToast('发现 v' + v + '，正在更新…');
+      setTimeout(function () {
+        location.replace(location.pathname + '?v=' + v);
+      }, 600);
     })
     .catch(function () {});
 }
