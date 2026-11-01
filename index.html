@@ -499,7 +499,7 @@
   <img class="spIcon" src="icon.png" alt="">
   <div class="spName">Sunglow</div>
   <div class="spSub">朝霞 · 晚霞 · 火烧云</div>
-  <div class="spVer" id="spVer">v1.12</div>
+  <div class="spVer" id="spVer">v1.13</div>
 </div>
 
 <script>
@@ -531,7 +531,7 @@
 <header>
   <div>
     <h1>Sunglow</h1>
-    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.12</div>
+    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.13</div>
   </div>
   <div class="hbtns">
     <button class="locBtn" id="locBtn">
@@ -613,7 +613,7 @@
 
     <div class="card">
       <h2>关于</h2>
-      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.12</b></div>
+      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.13</b></div>
       <div class="kv"><span>开发者</span><b>DeepSeek · BobLi（只提要求）</b></div>
       <div class="kv"><span>联系 QQ</span><b id="qqCopy" class="copyQQ">3253132384</b></div>
       <div class="kv"><span>获取更新</span><b>加 QQ 3253132384 获取新版本</b></div>
@@ -1980,7 +1980,11 @@ document.querySelectorAll('.tabbar button').forEach(function (b) {
 });
 
 $('locBtn').addEventListener('click', function () { showTab('place'); });
+var LAST_REFRESH_AT = 0;
 $('refreshBtn').addEventListener('click', function () {
+  var nowMs = Date.now();
+  if (nowMs - LAST_REFRESH_AT < 5000) { showToast('太快了，稍后重试'); return; }
+  LAST_REFRESH_AT = nowMs;
   // 保留现有数据，新的取回后才替换；失败就继续显示上一份
   showToast('正在刷新…');
   S.loading = false;
@@ -2003,6 +2007,13 @@ $('setTheme').addEventListener('change', function (e) { applyTheme(e.target.valu
 $('setLang').addEventListener('change', function (e) { setLang(e.target.value); });
 if ($('setLang')) $('setLang').value = LANG;
 buildI18NRegex();
+/* 请求失败文案：限流优先提示「太快了」 */
+function rateMsg(err) {
+  var m = String((err && err.message) || err || '');
+  if (/429|too many|rate/i.test(m)) return '太快了，稍后重试';
+  return '太快了，稍后重试';
+}
+
 function showToast(msg) {
   var t = $('appToast');
   if (!t) return;
@@ -2164,7 +2175,7 @@ function loadAir(force) {
       S.airLoading = false;
       if (S.airNow) {
         // 有旧数据：保持界面不变，只提示一下
-        showToast('空气质量刷新失败，仍显示上次数据');
+        showToast(rateMsg());
         renderAir();
       } else {
         S.airError = true;
@@ -2174,7 +2185,11 @@ function loadAir(force) {
 }
 
 /* 空气数据取不到时，界面上主动重试 */
+var LAST_AIR_RETRY = 0;
 function retryAir() {
+  var nowMs = Date.now();
+  if (nowMs - LAST_AIR_RETRY < 5000) { showToast('太快了，稍后重试'); return; }
+  LAST_AIR_RETRY = nowMs;
   S.airLoading = false;
   S.air = null;
   S.airNow = null;
@@ -3921,9 +3936,10 @@ function renderWind() {
 
 
 /* ---------- 版本与更新记录 ---------- */
-var APP_VERSION = '1.12';
+var APP_VERSION = '1.13';
 /* 日期一律以实际发版当天为准；写之前先看系统时间，别猜 */
 var CHANGELOG = [
+  { v:'1.13', d:'2026-11-02', items:['刷新提示统一为「太快了，稍后重试」，并加 5 秒点击间隔'] },
   { v:'1.12', d:'2026-11-02', items:['刷新改为「成功才替换」：再次刷新失败时保留上一份数据，不再清空'] },
   { v:'1.11', d:'2026-11-02', items:['修复能见度卡在固定值：PM2.5 缺失时不再假装 10μg/m³，改为只用 AOD 或直接显示未知'] },
   { v:'1.10', d:'2026-11-02', items:['网页版发现新版本会自动跳转到新地址，不用手动清缓存'] },
