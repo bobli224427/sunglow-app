@@ -499,7 +499,7 @@
   <img class="spIcon" src="icon.png" alt="">
   <div class="spName">Sunglow</div>
   <div class="spSub">朝霞 · 晚霞 · 火烧云</div>
-  <div class="spVer" id="spVer">v1.11</div>
+  <div class="spVer" id="spVer">v1.12</div>
 </div>
 
 <script>
@@ -531,7 +531,7 @@
 <header>
   <div>
     <h1>Sunglow</h1>
-    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.11</div>
+    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.12</div>
   </div>
   <div class="hbtns">
     <button class="locBtn" id="locBtn">
@@ -613,7 +613,7 @@
 
     <div class="card">
       <h2>关于</h2>
-      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.11</b></div>
+      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.12</b></div>
       <div class="kv"><span>开发者</span><b>DeepSeek · BobLi（只提要求）</b></div>
       <div class="kv"><span>联系 QQ</span><b id="qqCopy" class="copyQQ">3253132384</b></div>
       <div class="kv"><span>获取更新</span><b>加 QQ 3253132384 获取新版本</b></div>
@@ -1981,19 +1981,15 @@ document.querySelectorAll('.tabbar button').forEach(function (b) {
 
 $('locBtn').addEventListener('click', function () { showTab('place'); });
 $('refreshBtn').addEventListener('click', function () {
+  // 保留现有数据，新的取回后才替换；失败就继续显示上一份
+  showToast('正在刷新…');
   S.loading = false;
-  S.data = null;
-  S.wind = null;
-  S.air = null;
-  S.airNow = null;
-  S.now = null;
-  S.cnNow = null;
-  S.metar = null;
-  S.metarAt = 0;
+  S.windLoading = false;
   S.airLoading = false;
   S.metarLoading = false;
   S.airError = false;
   S.airSeq = (S.airSeq || 0) + 1;
+  S.wind = null;          // 风廓线数据量小，允许重取
   load();
   loadMetar(true);
   loadAir(true);
@@ -2166,8 +2162,14 @@ function loadAir(force) {
       clearTimeout(timer);
       if (seq !== S.airSeq) return;
       S.airLoading = false;
-      S.airError = true;
-      renderAir();
+      if (S.airNow) {
+        // 有旧数据：保持界面不变，只提示一下
+        showToast('空气质量刷新失败，仍显示上次数据');
+        renderAir();
+      } else {
+        S.airError = true;
+        renderAir();
+      }
     });
 }
 
@@ -2280,8 +2282,9 @@ function loadMetar(force) {
       render();
     })
     .catch(function () {
+      // 保留上一次实测值，不要因为一次网络失败就清空
       S.metarLoading = false;
-      S.metar = null;
+      if (!S.metar) S.metarAt = 0;
     });
 }
 
@@ -3918,9 +3921,10 @@ function renderWind() {
 
 
 /* ---------- 版本与更新记录 ---------- */
-var APP_VERSION = '1.11';
+var APP_VERSION = '1.12';
 /* 日期一律以实际发版当天为准；写之前先看系统时间，别猜 */
 var CHANGELOG = [
+  { v:'1.12', d:'2026-11-02', items:['刷新改为「成功才替换」：再次刷新失败时保留上一份数据，不再清空'] },
   { v:'1.11', d:'2026-11-02', items:['修复能见度卡在固定值：PM2.5 缺失时不再假装 10μg/m³，改为只用 AOD 或直接显示未知'] },
   { v:'1.10', d:'2026-11-02', items:['网页版发现新版本会自动跳转到新地址，不用手动清缓存'] },
   { v:'1.09', d:'2026-11-01', items:['修复卡片仍写「各 50%」，权重标签按实际源数计算（三源各 33%）'] },
