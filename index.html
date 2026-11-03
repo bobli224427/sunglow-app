@@ -208,6 +208,16 @@
   .state { text-align:center; padding:42px 0; color:var(--muted); font-size:13px; line-height:1.7; }
   .retry { margin-top:12px; border:1px solid var(--line); background:var(--input); color:var(--text); border-radius:10px; padding:10px 18px; font-size:13px; }
 
+  /* 取数状态条：一眼能看出「什么时候更新的 / 有没有失败」 */
+  #loadState { display:flex; align-items:center; gap:6px; padding:2px 4px 10px; font-size:11.5px; color:var(--muted); min-height:16px; }
+  #loadState::before { content:''; width:6px; height:6px; border-radius:50%; background:#5b6474; flex:0 0 6px; }
+  #loadState.ok::before { background:#4ac26b; }
+  #loadState.stale::before { background:#ffb454; }
+  #loadState.fail::before { background:#e5484d; }
+  #loadState.loading::before { background:#7aa2ff; animation:pulse 1s ease-in-out infinite; }
+  #loadState.warn { color:#ffcf85; }
+  @keyframes pulse { 50% { opacity:.25; } }
+
   .kv { display:flex; justify-content:space-between; padding:9px 0; border-bottom:1px solid var(--line); font-size:13.5px; }
   .kv:last-child { border-bottom:0; }
   .fold { border-top: 1px solid var(--line); margin-top: 8px; }
@@ -499,7 +509,7 @@
   <img class="spIcon" src="icon.png" alt="">
   <div class="spName">Sunglow</div>
   <div class="spSub">朝霞 · 晚霞 · 火烧云</div>
-  <div class="spVer" id="spVer">v1.14</div>
+  <div class="spVer" id="spVer">v1.15</div>
 </div>
 
 <script>
@@ -531,7 +541,7 @@
 <header>
   <div>
     <h1>Sunglow</h1>
-    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.14</div>
+    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.15</div>
   </div>
   <div class="hbtns">
     <button class="locBtn" id="locBtn">
@@ -543,6 +553,8 @@
     </button><div id="loadBar"><i></i></div></div>
   </div>
 </header>
+
+<div id="loadState">—</div>
 
 <main>
   <div class="panel on" id="panel-home">
@@ -613,7 +625,7 @@
 
     <div class="card">
       <h2>关于</h2>
-      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.14</b></div>
+      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.15</b></div>
       <div class="kv"><span>开发者</span><b>DeepSeek · BobLi（只提要求）</b></div>
       <div class="kv"><span>联系 QQ</span><b id="qqCopy" class="copyQQ">3253132384</b></div>
       <div class="kv"><span>网页版</span><a class="link" href="https://bobli224427.github.io/sunglow-app/">bobli224427.github.io/sunglow-app</a></div>
@@ -968,6 +980,13 @@ var S = {
   data: null, loading: false,
   model: localStorage.getItem('x-model') || 'ecmwf',
   models: {},
+  // 取数状态机（refreshForecast 维护）
+  loadPhase: 'idle',     // idle | loading | ok | stale | fail
+  updatedAt: 0,          // 数据成功替换的时刻；状态栏据此显示「更新于 HH:MM」
+  modelErr: {},          // 每个源最近一次失败原因，成功即清空
+  modelAt: {},           // 每个源最近一次成功时刻
+  loadedOnce: false,
+  lastRefreshAt: 0,
   wind: null,
   env: null,
   air: null, airLoading: false
@@ -1378,6 +1397,13 @@ function render() {
 
 /* 换位置时清掉所有跟坐标绑定的缓存 */
 function resetForLocation() {
+  // 在途请求作废，避免旧位置的响应盖掉新位置（以前就是这样串台的）
+  if (loadCtl) { try { loadCtl.abort(); } catch (e) {} }
+  loadGen++;
+  S.updatedAt = 0;
+  S.modelErr = {};
+  S.modelAt = {};
+  S.lastRefreshAt = 0;
   S.metar = null;
   S.metarLoading = false;
   S.moon = null;
@@ -1406,80 +1432,218 @@ function locKey() {
   return S.lat.toFixed(3) + ',' + S.lon.toFixed(3);
 }
 
-function load() {
-  if (S.loading) { setLoading(false); return; }
+/* ========== 预报取数：唯一入口 ==========
+   老问题的根子：混合模式下 GFS/ICON 只在「本地没有」时才请求，
+   于是不管点几次刷新，拿到的还是第一次那三个数，概率永远不动。
+   现在：每次刷新按当前模式重新请求（混合=三源全取）；
+   请求带代际号 loadGen，旧响应回来直接丢弃；
+   成功才替换；失败保留上一份；不管成败都保证把 loading 收尾。 */
+var FORECAST_TIMEOUT = 12000;   // 单次请求超时
+var REFRESH_MIN_GAP = 5000;     // 手动刷新最小间隔
+var loadGen = 0;
+var loadCtl = null;
 
-  if (S.loadedKey && S.loadedKey !== locKey()) resetForLocation();
-  S.loadedKey = locKey();
-
-  if (!S.air) loadAir();
-  if (!S.wind && !S.windLoading) { S.windLoading = true; loadWind(); }
-  loadEnv();
-  loadMetar();
-  loadLightPollution();
-  if (!S.moon) loadMoon();
-
-  S.loading = true;
-  $('content').innerHTML = '<div class="state">正在获取云图…</div>';
-  setLoading(true);
-
-  var primary = (S.model === 'mix') ? modelOf('ecmwf') : modelOf(S.model);
-
-  var url = 'https://api.open-meteo.com/v1/forecast'
+function forecastUrl(k) {
+  var m = modelOf(k);
+  return 'https://api.open-meteo.com/v1/forecast'
     + '?latitude=' + S.lat.toFixed(3) + '&longitude=' + S.lon.toFixed(3)
     + '&timezone=Asia%2FShanghai&forecast_days=6'
     + '&daily=sunrise,sunset'
     + '&hourly=cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,precipitation_probability,visibility'
     + ',temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,wind_direction_10m'
-    + '&models=' + primary.param;
+    + '&models=' + m.param;
+}
 
-  // 看门狗：20 秒还没结果就强制收尾，避免一直转圈
-  clearTimeout(window._loadWatch);
-  window._loadWatch = setTimeout(function () {
-    if (S.loading) {
-      S.loading = false;
-      setLoading(false);
-      if (!S.data) {
-        $('content').innerHTML = '<div class="state">加载超时，换个网络或稍后重试'
-          + '<br><button class="retry" onclick="load()">重试</button></div>';
+function neededModels() {
+  return S.model === 'mix' ? ['ecmwf', 'gfs', 'icon'] : [S.model];
+}
+
+function errText(e) {
+  var m = String((e && e.message) || e || '');
+  if (/abort/i.test(m)) return '超时';
+  if (/429|too many/i.test(m)) return '请求太频繁';
+  if (/HTTP 5/.test(m)) return '服务端错误';
+  return m || '网络异常';
+}
+
+function setLoadPhase(phase) {
+  S.loadPhase = phase;
+  S.loading = (phase === 'loading');
+  var btn = $('refreshBtn');
+  if (btn) btn.classList.toggle('spin', phase === 'loading');
+  setLoading(phase === 'loading');
+  paintStatus();
+}
+
+function paintStatus(extra) {
+  var box = $('loadState');
+  if (!box) return;
+  var TXT = {
+    zh: { refreshing: '正在刷新…', none: '还没取到数据', updated: '更新于 ', partial: '部分源失败', old: '数据偏旧', extraSep: ' · ' },
+    en: { refreshing: 'Refreshing…', none: 'No data yet', updated: 'Updated ', partial: 'some sources failed', old: 'stale', extraSep: ' · ' },
+    ja: { refreshing: '更新中…', none: 'データ未取得', updated: '更新 ', partial: '一部のソース失敗', old: 'データが古い', extraSep: ' · ' }
+  };
+  var T = TXT[LANG] || TXT.zh;
+  var at = S.updatedAt ? new Date(S.updatedAt) : null;
+  var hhmm = at ? String(at.getHours()).padStart(2, '0') + ':' + String(at.getMinutes()).padStart(2, '0') : '';
+  var errs = [];
+  if (S.modelErr) Object.keys(S.modelErr).forEach(function (k) { if (S.modelErr[k]) errs.push(k.toUpperCase() + ' ' + S.modelErr[k]); });
+
+  var head;
+  if (S.loadPhase === 'loading') head = T.refreshing;
+  else if (!S.updatedAt) head = T.none;
+  else head = T.updated + hhmm + (errs.length && S.loadPhase !== 'loading' ? T.extraSep + T.partial : '');
+
+  if (S.updatedAt && Date.now() - S.updatedAt > 15 * 60000 && S.loadPhase !== 'loading') head += T.extraSep + T.old;
+  if (extra) head += T.extraSep + extra;
+  if (errs.length && S.loadPhase !== 'loading') head += '（' + errs.join('，') + '）';
+
+  box.textContent = head;
+  box.className = 'loadState ' + (S.loadPhase || 'idle') + (errs.length ? ' warn' : '');
+}
+
+function fetchOneModel(k, signal) {
+  return fetch(forecastUrl(k), { signal: signal, cache: 'no-store' })
+    .then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function (j) {
+      if (!j || j.error || !j.hourly || !j.daily) throw new Error('数据不完整');
+      return j;
+    });
+}
+
+function safeRender() {
+  try {
+    render();
+  } catch (e) {
+    console.error('render 失败', e);
+    var c = $('content');
+    if (!c) return;
+    c.innerHTML = '<div class="card"><div class="state">渲染出错了：'
+      + String((e && e.message) || e).replace(/[<>&]/g, function (ch) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[ch]; })
+      + '</div><button class="retry" id="renderRetry">重试</button></div>';
+    var b = $('renderRetry');
+    if (b) b.addEventListener('click', function () { refreshForecast({ force: true }); });
+  }
+}
+
+function showFailCard(msg) {
+  var c = $('content');
+  if (!c) return;
+  var safe = String(msg || '').replace(/[<>&]/g, function (ch) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[ch]; });
+  c.innerHTML = '<div class="card"><div class="state">获取失败：' + safe + '</div>'
+    + '<div style="display:flex;gap:10px;justify-content:center">'
+    + '<button class="retry" id="failRetry">重试</button>'
+    + '<button class="retry" id="failPlace">换个位置</button></div></div>';
+  var r = $('failRetry'), p = $('failPlace');
+  if (r) r.addEventListener('click', function () { refreshForecast({ force: true }); });
+  if (p) p.addEventListener('click', function () { showTab('place'); });
+}
+
+/* 兼容老的 onclick="load()" 调用点 */
+function load(opt) { return refreshForecast(opt); }
+
+function refreshForecast(opt) {
+  opt = opt || {};
+  var now = Date.now();
+  if (!opt.force && S.loadedOnce && now - (S.lastRefreshAt || 0) < REFRESH_MIN_GAP) {
+    showToast('太快了，稍后重试');
+    return Promise.resolve(false);
+  }
+  S.lastRefreshAt = now;
+
+  if (loadCtl) { try { loadCtl.abort(); } catch (e) {} }
+  loadCtl = new AbortController();
+  var ctl = loadCtl;
+  var gen = ++loadGen;
+  var keys = neededModels();
+
+  if (!S.data) $('content').innerHTML = '<div class="state">正在获取云图…</div>';
+  setLoadPhase('loading');
+
+  // 兜底：网络怎么抽，都要在超时后把 loading 收掉
+  var guard = setTimeout(function () {
+    if (gen === loadGen && S.loadPhase === 'loading') { try { ctl.abort(); } catch (e) {} }
+  }, FORECAST_TIMEOUT + 2000);
+
+  var jobs = keys.map(function (k) {
+    return fetchOneModel(k, ctl.signal).then(
+      function (data) { return { k: k, ok: true, data: data }; },
+      function (err) { return { k: k, ok: false, msg: errText(err) }; }
+    );
+  });
+
+  return Promise.all(jobs).then(function (res) {
+    clearTimeout(guard);
+    if (gen !== loadGen) return false;      // 已被更新的一轮取代，本次结果作废
+
+    var okCount = 0;
+    if (!S.modelErr) S.modelErr = {};
+    if (!S.modelAt) S.modelAt = {};
+    res.forEach(function (r) {
+      if (r.ok) {
+        okCount++;
+        S.models[r.k] = r.data;
+        S.modelErr[r.k] = '';
+        S.modelAt[r.k] = Date.now();
+      } else {
+        S.modelErr[r.k] = r.msg;
+      }
+    });
+
+    if (okCount > 0) {
+      // 成功才替换：主数据取当前模式那一份，混合模式由 render 里的 applyMix 合并
+      var pk = (S.model === 'mix') ? 'ecmwf' : S.model;
+      if (S.models[pk]) { S.data = S.models[pk]; S.rawData = S.data; S.rawModel = pk; }
+      S.updatedAt = Date.now();
+      S.loadedOnce = true;
+      try { localStorage.setItem('x-cache', JSON.stringify({ t: S.updatedAt, d: S.data })); } catch (e) {}
+      safeRender();
+      setLoadPhase(okCount === keys.length ? 'ok' : 'stale');
+      if (okCount < keys.length) showToast('有源没取到，先按到手的算');
+    } else {
+      S.lastError = res.length ? res[0].msg : '网络异常';
+      if (S.data) {
+        safeRender();
+        setLoadPhase('stale');
+        showToast('刷新失败，先看上一份数据');
+      } else {
+        // 全挂且手上没数据：先用本地缓存顶一下，别白屏
+        var cached = null;
+        try { cached = JSON.parse(localStorage.getItem('x-cache') || 'null'); } catch (e2) {}
+        if (cached && cached.d) {
+          S.data = cached.d;
+          S.rawData = cached.d;
+          S.rawModel = (S.model === 'mix') ? 'ecmwf' : S.model;
+          S.updatedAt = cached.t || 0;
+          safeRender();
+          setLoadPhase('stale');
+          showToast('网络不好，先显示上次的数据');
+        } else {
+          showFailCard(S.lastError);
+          setLoadPhase('fail');
+        }
       }
     }
-  }, 20000);
 
-  var ctl = new AbortController();
-  var timer = setTimeout(function () { ctl.abort(); }, 12000);
-
-  fetch(url, { signal: ctl.signal })
-    .then(function (r) { clearTimeout(timer); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-    .then(function (j) {
-      S.data = j;
-      S.rawData = j;
-      S.rawModel = primary.k;
-      try { localStorage.setItem('x-cache', JSON.stringify({ t: Date.now(), d: j })); } catch (e) {}
-
-      if (S.model === 'mix') {
-        Promise.all([ensureGfs(), ensureIcon()]).then(function () { render(); });
-      } else {
-        render();
-      }
-      loadEnv();
-      loadCNNow();
-      if (!TYM.storms) loadTyphoon();
-      loadMoon();
-      loadLightPollution();
-      if (!S.air) loadAir();
-      if (!S.wind && !S.windLoading) { S.windLoading = true; loadWind(); }
-      loadThirdParty();
-    })
-    .catch(function (e) {
-      var c = null;
-      try { c = JSON.parse(localStorage.getItem('x-cache') || 'null'); } catch (err) {}
-      if (c && c.d) { S.data = c.d; render(); }
-      else $('content').innerHTML = '<div class="state">获取失败：' + (e.message || '网络异常')
-        + '<br><button class="retry" onclick="load()">重试</button>'
-        + '<br><button class="retry" onclick="showTab(\'place\')">换个位置</button></div>';
-    })
-    .then(function () { S.loading = false; setLoading(false); });
+    // 附属数据不阻塞主流程
+    loadEnv(); loadCNNow();
+    if (!TYM.storms) loadTyphoon();
+    loadMoon(); loadLightPollution();
+    if (!S.air) loadAir();
+    if (!S.wind && !S.windLoading) { S.windLoading = true; loadWind(); }
+    loadThirdParty();
+    return true;
+  }).catch(function (e) {
+    clearTimeout(guard);
+    if (gen !== loadGen) return false;
+    S.lastError = errText(e);
+    if (S.data) { safeRender(); setLoadPhase('stale'); }
+    else { showFailCard(S.lastError); setLoadPhase('fail'); }
+    return false;
+  });
 }
 
 function nameOf(lat, lon) {
@@ -1980,25 +2144,22 @@ document.querySelectorAll('.tabbar button').forEach(function (b) {
 });
 
 $('locBtn').addEventListener('click', function () { showTab('place'); });
-var LAST_REFRESH_AT = 0;
-$('refreshBtn').addEventListener('click', function () {
-  var nowMs = Date.now();
-  if (nowMs - LAST_REFRESH_AT < 5000) { showToast('太快了，稍后重试'); return; }
-  LAST_REFRESH_AT = nowMs;
-  // 保留现有数据，新的取回后才替换；失败就继续显示上一份
-  showToast('正在刷新…');
-  S.loading = false;
+
+/* 手动刷新：顶部按钮和「刷新云图」共用一套，别再各写一份逻辑 */
+function doRefresh() {
+  // 不在这里手改 S.loading：交给 refreshForecast 的状态机，
+  // 否则会和进行中的请求打架，表现就是「转圈转没了但数字没变」。
   S.windLoading = false;
   S.airLoading = false;
-  S.metarLoading = false;
   S.airError = false;
   S.airSeq = (S.airSeq || 0) + 1;
   S.wind = null;          // 风廓线数据量小，允许重取
-  load();
+  refreshForecast();
   loadMetar(true);
   loadAir(true);
-});
-$('qRefresh').addEventListener('click', function () { load(); });
+}
+$('refreshBtn').addEventListener('click', doRefresh);
+$('qRefresh').addEventListener('click', doRefresh);
 $('qLocate').addEventListener('click', function () { useGps(); });
 $('useGps').addEventListener('click', useGps);
 $('openMap').addEventListener('click', openMap);
@@ -2895,14 +3056,17 @@ document.querySelectorAll('[data-model]').forEach(function (b) {
     });
 
     // 切模式必须丢掉旧数据，避免看不到变化
-    S.loading = false;
     S.data = null;
     S.rawData = null;
     S.models = {};
+    S.modelErr = {};
+    S.modelAt = {};
+    S.updatedAt = 0;
     S.envH = null;
     if (!S.air) loadAir();
     if (!S.wind) { S.windLoading = true; loadWind(); }
-    load();
+    // 强制取：切换模式是用户明确要看新数，别被 5 秒节流挡住
+    load({ force: true });
   });
 });
 
@@ -2980,50 +3144,7 @@ function mergeMany(list) {
   return out;
 }
 
-/* 混合模式下确保 GFS 数据就位 */
-function ensureGfs() {
-  if (S.models && S.models.gfs && S.models.gfs.hourly) return Promise.resolve(true);
-  var url = 'https://api.open-meteo.com/v1/forecast'
-    + '?latitude=' + S.lat.toFixed(3) + '&longitude=' + S.lon.toFixed(3)
-    + '&timezone=Asia%2FShanghai&forecast_days=6'
-    + '&daily=sunrise,sunset'
-    + '&hourly=cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,precipitation_probability,visibility'
-    + '&models=' + modelOf('gfs').param;
 
-  var ctl = new AbortController();
-  var timer = setTimeout(function () { ctl.abort(); }, 10000);
-
-  return fetch(url, { signal: ctl.signal })
-    .then(function (r) { clearTimeout(timer); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-    .then(function (j) {
-      if (!j || j.error || !j.hourly) throw new Error('bad');
-      S.models.gfs = j;
-      return true;
-    })
-    .catch(function () { return false; });
-}
-
-function ensureIcon() {
-  if (S.models && S.models.icon && S.models.icon.hourly) return Promise.resolve(true);
-  var url = 'https://api.open-meteo.com/v1/forecast'
-    + '?latitude=' + S.lat.toFixed(3) + '&longitude=' + S.lon.toFixed(3)
-    + '&timezone=Asia%2FShanghai&forecast_days=6'
-    + '&daily=sunrise,sunset'
-    + '&hourly=cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,precipitation_probability,visibility'
-    + '&models=' + modelOf('icon').param;
-
-  var ctl = new AbortController();
-  var timer = setTimeout(function () { ctl.abort(); }, 10000);
-
-  return fetch(url, { signal: ctl.signal })
-    .then(function (r) { clearTimeout(timer); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-    .then(function (j) {
-      if (!j || j.error || !j.hourly) throw new Error('bad');
-      S.models.icon = j;
-      return true;
-    })
-    .catch(function () { return false; });
-}
 
 function applyMix() {
   if (!S.rawData) return;
@@ -3109,23 +3230,9 @@ function ensembleDay(which, dayIdx) {
 }
 
 /* 拉取其余模式（只取云层，体积小） */
-function loadOtherModels() {
-  MODELS.forEach(function (m) {
-    if (S.models[m.k]) return;
-    if (m.k === S.model && S.data) { S.models[m.k] = S.data; return; }
-
-    var url = 'https://api.open-meteo.com/v1/forecast'
-      + '?latitude=' + S.lat.toFixed(3) + '&longitude=' + S.lon.toFixed(3)
-      + '&timezone=Asia%2FShanghai&forecast_days=3'
-      + '&daily=sunrise,sunset'
-      + '&hourly=cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,precipitation_probability,visibility'
-      + '&models=' + m.param;
-
-    fetch(url).then(function (r) { return r.json(); })
-      .then(function (j) { S.models[m.k] = j; render(); })
-      .catch(function () {});
-  });
-}
+/* 模型数据由 refreshForecast 统一取（混合模式一次取三源）；这里保留空实现，
+   交给 render() 里老的调用点，不再走「本地没有才请求」那条会卡住的老路。 */
+function loadOtherModels() {}
 
 /* ---------- 第三方霞光评分（Golden Hour / SendaFun） ---------- */
 function loadThirdParty() {
@@ -3936,9 +4043,16 @@ function renderWind() {
 
 
 /* ---------- 版本与更新记录 ---------- */
-var APP_VERSION = '1.14';
+var APP_VERSION = '1.15';
 /* 日期一律以实际发版当天为准；写之前先看系统时间，别猜 */
 var CHANGELOG = [
+  { v:'1.15', d:'2026-11-03', items:[
+    '重做预报取数：混合模式下 GFS/ICON 以前只在首次取一次，之后怎么刷新都是旧数据，概率卡住不动；现在每次刷新三源全部重取',
+    '新增取数状态条：一眼看到「更新于 HH:MM」，某个源失败会标出来，数据超过 15 分钟会提示偏旧',
+    '刷新失败保留上一份数据并提示，不再白屏、也不会一直转圈',
+    '连点刷新只发一轮请求，晚回来的旧响应自动丢弃，不会盖掉新数据',
+    '取数逻辑收成一个入口，切模式/换位置都强制重取'
+  ] },
   { v:'1.14', d:'2026-11-02', items:['关于页「获取更新」改为网页版链接，手机浏览器点开即是最新版'] },
   { v:'1.13', d:'2026-11-02', items:['刷新提示统一为「太快了，稍后重试」，并加 5 秒点击间隔'] },
   { v:'1.12', d:'2026-11-02', items:['刷新改为「成功才替换」：再次刷新失败时保留上一份数据，不再清空'] },
