@@ -509,7 +509,7 @@
   <img class="spIcon" src="icon.png" alt="">
   <div class="spName">Sunglow</div>
   <div class="spSub">朝霞 · 晚霞 · 火烧云</div>
-  <div class="spVer" id="spVer">v1.21</div>
+  <div class="spVer" id="spVer">v1.22</div>
 </div>
 
 <script>
@@ -541,7 +541,7 @@
 <header>
   <div>
     <h1>Sunglow</h1>
-    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.21</div>
+    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.22</div>
   </div>
   <div class="hbtns">
     <button class="locBtn" id="locBtn">
@@ -625,7 +625,7 @@
 
     <div class="card">
       <h2>关于</h2>
-      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.21</b></div>
+      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.22</b></div>
       <div class="kv"><span>开发者</span><b>DeepSeek · BobLi（只提要求）</b></div>
       <div class="kv"><span>联系 QQ</span><b id="qqCopy" class="copyQQ">3253132384</b></div>
       <div class="kv"><span>网页版</span><a class="link" href="https://bobli224427.github.io/sunglow-app/">bobli224427.github.io/sunglow-app</a></div>
@@ -1092,30 +1092,27 @@ function scoreBreakdown(m) {
   };
 }
 
-/* 混合模式明细：两家原始云量 + 合并值 */
+/* 混合模式明细：按实际到手的源逐个列出来，再给合并值。
+   （老代码写死只列 ECMWF + GFS，ICON 明明参与了合并却不显示，
+     而且名称映射只认 gfs，icon 会被误标成 ECMWF。） */
 function mixDetailLine(isDawn, when) {
   if (S.model !== 'mix' || !when || !S.data || !S.data.hourly || !S.data.hourly.time) return '';
   try {
-  var day = when.slice(0, 10);
-  var hh = nearestHour(when);
-  var parts = [];
+    var day = when.slice(0, 10);
+    var hh = nearestHour(when);
+    var parts = [];
 
-  function grab(k) {
-    var d = (S.models && S.models[k]) || (S.rawModel === k ? S.rawData : null);
-    if (!d || !d.hourly) return null;
-    var m = metricsAt(d.hourly, day, hh);
-    return { name: k === 'gfs' ? 'GFS' : 'ECMWF', m: m };
-  }
+    MODELS.forEach(function (mo) {
+      var d = (S.models && S.models[mo.k]) || (S.rawModel === mo.k ? S.rawData : null);
+      if (!d || !d.hourly) return;
+      var m = metricsAt(d.hourly, day, hh);
+      parts.push(mo.name + ' 高' + Math.round(m.high) + ' 中' + Math.round(m.mid) + ' 低' + Math.round(m.low));
+    });
+    if (!parts.length) return '';
 
-  var e = grab('ecmwf');
-  var g = grab('gfs');
-  if (e) parts.push('ECMWF 高' + Math.round(e.m.high) + ' 中' + Math.round(e.m.mid) + ' 低' + Math.round(e.m.low));
-  if (g) parts.push('GFS 高' + Math.round(g.m.high) + ' 中' + Math.round(g.m.mid) + ' 低' + Math.round(g.m.low));
-  if (!parts.length) return '';
-
-  var m = metricsAt(S.data.hourly, day, hh);
-  return '<div class="srcTag" style="margin-top:6px">混合明细：' + parts.join('　|　')
-    + '　→ 合并 高' + Math.round(m.high) + ' 中' + Math.round(m.mid) + ' 低' + Math.round(m.low) + '</div>';
+    var m = metricsAt(S.data.hourly, day, hh);
+    return '<div class="srcTag" style="margin-top:6px">混合明细（' + parts.length + ' 源）：' + parts.join('　|　')
+      + '　→ 合并 高' + Math.round(m.high) + ' 中' + Math.round(m.mid) + ' 低' + Math.round(m.low) + '</div>';
   } catch (e) { return ''; }
 }
 
@@ -4133,9 +4130,10 @@ function renderWind() {
 
 
 /* ---------- 版本与更新记录 ---------- */
-var APP_VERSION = '1.21';
+var APP_VERSION = '1.22';
 /* 日期一律以实际发版当天为准；写之前先看系统时间，别猜 */
 var CHANGELOG = [
+  { v:'1.22', d:'2026-11-03', items:['混合明细原来只列 ECMWF 和 GFS，ICON 明明参与合并却不显示（还会被误标成 ECMWF）；现在按实际源全列，并标明几家'] },
   { v:'1.21', d:'2026-11-03', items:['机场只有 CAVOK（≥10 km）时，补出来的估算值不再标「≥」，避免看着像「至少 15 km」'] },
   { v:'1.20', d:'2026-11-03', items:['能见度推算重标定：PM2.5→能见度对照表整体偏低一档（51.7 被算成 8.3 km，实况 15~18 km），已按实测重标', '湿度惩罚放缓，不再对低值二次打折', '没有机场实测时，用模型能见度与推算值互相校验，并标注来源「实测 / 模型 / 推算」'] },
   { v:'1.19', d:'2026-11-03', items:['能见度口径统一：首页和拍摄要素以前显示模型原始值（14.5 km），空气页却是推算值（7.6 km）；现在统一成「实测优先、否则推算」并标明来源', '概率等级新增最低档「不烧」：20 分以下不再笼统叫微烧'] },
