@@ -509,7 +509,7 @@
   <img class="spIcon" src="icon.png" alt="">
   <div class="spName">Sunglow</div>
   <div class="spSub">朝霞 · 晚霞 · 火烧云</div>
-  <div class="spVer" id="spVer">v1.20</div>
+  <div class="spVer" id="spVer">v1.21</div>
 </div>
 
 <script>
@@ -541,7 +541,7 @@
 <header>
   <div>
     <h1>Sunglow</h1>
-    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.20</div>
+    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.21</div>
   </div>
   <div class="hbtns">
     <button class="locBtn" id="locBtn">
@@ -625,7 +625,7 @@
 
     <div class="card">
       <h2>关于</h2>
-      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.20</b></div>
+      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.21</b></div>
       <div class="kv"><span>开发者</span><b>DeepSeek · BobLi（只提要求）</b></div>
       <div class="kv"><span>联系 QQ</span><b id="qqCopy" class="copyQQ">3253132384</b></div>
       <div class="kv"><span>网页版</span><a class="link" href="https://bobli224427.github.io/sunglow-app/">bobli224427.github.io/sunglow-app</a></div>
@@ -2564,7 +2564,9 @@ function visNow() {
     var floor = S.metar.visKm;
     var up = Math.max(est == null ? 0 : est, modelKm == null ? 0 : Math.min(modelKm, floor * 2.5));
     var kmA = Math.max(floor, up);
-    return { km: Math.round(kmA * 10) / 10, src: 'metar', station: S.metar.station, atLeast: true, floor: floor };
+    // 只有没往上补时才真的是「≥」（CAVOK 只保证 ≥10 km）；补出来的数是估算，不能再标 ≥
+    var stillFloor = Math.abs(kmA - floor) < 0.05;
+    return { km: Math.round(kmA * 10) / 10, src: 'metar', station: S.metar.station, atLeast: stillFloor, floor: floor };
   }
 
   // ③ 没有实测：模型值与推算值互相校验。
@@ -4131,9 +4133,10 @@ function renderWind() {
 
 
 /* ---------- 版本与更新记录 ---------- */
-var APP_VERSION = '1.20';
+var APP_VERSION = '1.21';
 /* 日期一律以实际发版当天为准；写之前先看系统时间，别猜 */
 var CHANGELOG = [
+  { v:'1.21', d:'2026-11-03', items:['机场只有 CAVOK（≥10 km）时，不再把补出来的估算值标成「≥」，避免看起来像'] },
   { v:'1.20', d:'2026-11-03', items:['能见度推算重标定：PM2.5→能见度对照表整体偏低一档（51.7 被算成 8.3 km，实况 15~18 km），已按实测重标', '湿度惩罚放缓，不再对低值二次打折', '没有机场实测时，用模型能见度与推算值互相校验，并标注来源「实测 / 模型 / 推算」'] },
   { v:'1.19', d:'2026-11-03', items:['能见度口径统一：首页和拍摄要素以前显示模型原始值（14.5 km），空气页却是推算值（7.6 km）；现在统一成「实测优先、否则推算」并标明来源', '概率等级新增最低档「不烧」：20 分以下不再笼统叫微烧'] },
   { v:'1.18', d:'2026-11-03', items:['首页与卡片统一显示口径：一律「概率% · 大烧/中烧/小烧/微烧」，不再一处写分数分一处写概率'] },
