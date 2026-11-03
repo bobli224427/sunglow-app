@@ -509,7 +509,7 @@
   <img class="spIcon" src="icon.png" alt="">
   <div class="spName">Sunglow</div>
   <div class="spSub">朝霞 · 晚霞 · 火烧云</div>
-  <div class="spVer" id="spVer">v1.19</div>
+  <div class="spVer" id="spVer">v1.20</div>
 </div>
 
 <script>
@@ -541,7 +541,7 @@
 <header>
   <div>
     <h1>Sunglow</h1>
-    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.19</div>
+    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.20</div>
   </div>
   <div class="hbtns">
     <button class="locBtn" id="locBtn">
@@ -625,7 +625,7 @@
 
     <div class="card">
       <h2>关于</h2>
-      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.19</b></div>
+      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.20</b></div>
       <div class="kv"><span>开发者</span><b>DeepSeek · BobLi（只提要求）</b></div>
       <div class="kv"><span>联系 QQ</span><b id="qqCopy" class="copyQQ">3253132384</b></div>
       <div class="kv"><span>网页版</span><a class="link" href="https://bobli224427.github.io/sunglow-app/">bobli224427.github.io/sunglow-app</a></div>
@@ -1221,7 +1221,7 @@ function shootCard(sun, m, score, isDawn) {
   var visText = (visInfoCard.km == null)
     ? '—'
     : (visInfoCard.atLeast ? '≥' : '') + visInfoCard.km.toFixed(1) + ' km · '
-      + visLevel(visInfoCard.km * 1000).name + (visInfoCard.src === 'metar' ? ' 实测' : ' 推算');
+      + visLevel(visInfoCard.km * 1000).name + ' ' + visSrcText(visInfoCard.src);
   var aodText = (S.airNow && S.airNow.aerosol_optical_depth != null)
     ? S.airNow.aerosol_optical_depth.toFixed(2) + ' · ' + aodLevel(S.airNow.aerosol_optical_depth).name
     : '—';
@@ -1375,7 +1375,7 @@ function render() {
         return '<div class="row"><span>能见度 / 气溶胶</span><b>'
           + (vNow2.km == null ? '—'
               : (vNow2.atLeast ? '≥' : '') + vNow2.km.toFixed(1) + ' km · ' + lv2.name
-                + (vNow2.src === 'metar' ? ' 实测' : ' 推算'))
+                + ' ' + visSrcText(vNow2.src))
           + ' / AOD ' + (aod2 == null ? '—' : aod2.toFixed(2) + ' · ' + lv3.name) + '</b></div>';
       })()
     + '</div><div class="tip">数据来源：Open-Meteo（' + (S.model === 'gfs' ? 'GFS 美国模式' : 'ECMWF 欧洲模式') + '）· 评分由本地算法计算</div>';
@@ -2528,21 +2528,63 @@ function metarVisKm(o) {
 }
 
 /* 统一能见度取值：实测优先，其次推算。返回 { km, src } */
+/* 模型能见度（km）。优先用 current 字段（就是"现在"这个数）；
+   hourly 只在 current 缺失时兜底，且"一整天一个数"的常数序列不予采信。 */
+function modelVisKm() {
+  if (S.now && S.now.visibility != null && isFinite(S.now.visibility) && S.now.visibility > 0) {
+    return S.now.visibility / 1000;
+  }
+  if (!S.data || !S.data.hourly || !S.data.hourly.visibility || !S.data.hourly.time) return null;
+  var arr = S.data.hourly.visibility;
+  var now = new Date();
+  var iso = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0')
+    + 'T' + String(now.getHours()).padStart(2, '0') + ':00';
+  var i = S.data.hourly.time.indexOf(iso);
+  if (i < 0) i = 0;
+  var v = arr[i];
+  if (v == null || !isFinite(v)) return null;
+  if (typeof isConstantSeries === 'function' && isConstantSeries(arr, i, 12)) return null;
+  return v / 1000;
+}
+
 function visNow() {
   var pm = S.airNow ? S.airNow.pm2_5 : null;
   var rh = S.now ? S.now.relative_humidity_2m : null;
   var aod = S.airNow ? S.airNow.aerosol_optical_depth : null;
   var est = visEstimate(pm, rh, aod);
+  var modelKm = modelVisKm();
 
-  if (S.metar && S.metar.visKm != null) {
-    // CAVOK / 6+ 这类「至少值」，用推算值补充实际档位，避免永远显示 10
-    if (S.metar.visAtLeast) {
-      var km = est != null && est > S.metar.visKm ? est : S.metar.visKm;
-      return { km: km, src: 'metar', station: S.metar.station, atLeast: true, floor: S.metar.visKm };
-    }
+  // ① 有真正的实测值，直接用
+  if (S.metar && S.metar.visKm != null && !S.metar.visAtLeast) {
     return { km: S.metar.visKm, src: 'metar', station: S.metar.station };
   }
+
+  // ② 实测是 CAVOK / 9999 这类「≥」值：当下限，再用模型/推算往上补
+  if (S.metar && S.metar.visKm != null && S.metar.visAtLeast) {
+    var floor = S.metar.visKm;
+    var up = Math.max(est == null ? 0 : est, modelKm == null ? 0 : Math.min(modelKm, floor * 2.5));
+    var kmA = Math.max(floor, up);
+    return { km: Math.round(kmA * 10) / 10, src: 'metar', station: S.metar.station, atLeast: true, floor: floor };
+  }
+
+  // ③ 没有实测：模型值与推算值互相校验。
+  //    模型通常更接近实况（苏州这次模型 15.3 km、推算 14 km、实况 ~18），
+  //    但把推算值的 0.7~1.6 倍当作合理区间，防止模型跑飞。
+  if (modelKm != null && est != null) {
+    var kmB = Math.min(est * 1.3, Math.max(est * 0.75, modelKm));
+    return { km: Math.round(kmB * 10) / 10, src: 'model', estKm: est, modelKm: modelKm };
+  }
+  if (modelKm != null) return { km: Math.round(modelKm * 10) / 10, src: 'model' };
+
   return est == null ? { km: null, src: 'none' } : { km: est, src: 'est' };
+}
+
+/* 能见度来源的中文标注 */
+function visSrcText(src) {
+  if (src === 'metar') return LANG === 'en' ? 'observed' : LANG === 'ja' ? '実測' : '实测';
+  if (src === 'model') return LANG === 'en' ? 'model' : LANG === 'ja' ? 'モデル' : '模型';
+  if (src === 'est') return LANG === 'en' ? 'estimated' : LANG === 'ja' ? '推定' : '推算';
+  return '';
 }
 
 /* 某一小时的能见度：当前小时优先用实测，其余按 PM2.5 + 湿度 + AOD 推算 */
@@ -2575,8 +2617,11 @@ function visEstimate(pm25, rh, aod) {
   var v = null;
 
   // ① PM2.5 → 能见度基准（km），分段线性
+  //    2026-11-03 重标定：旧表整体压低了一档（PM2.5 51.7 被算成 8.3 km，
+  //    而当时虹桥/浦东 METAR 是 CAVOK、模型 15.3 km、实况约 18 km）。
+  //    新表的锚点按"中国东部常见观测"取：50 → 15、75 → 11、150 → 6。
   if (hasPm) {
-    var pts = [[5, 28], [10, 20], [20, 15], [35, 10], [75, 6], [150, 3.5], [250, 2], [400, 1.2]];
+    var pts = [[5, 30], [10, 26], [20, 22], [35, 18], [50, 15], [75, 11], [115, 8], [150, 6], [200, 4.5], [250, 3.5], [400, 2]];
     if (pm25 <= pts[0][0]) v = pts[0][1];
     else if (pm25 >= pts[pts.length - 1][0]) v = pts[pts.length - 1][1];
     else {
@@ -2598,12 +2643,13 @@ function visEstimate(pm25, rh, aod) {
 
   if (v == null) return null;
 
-  // ③ 湿度修正：颗粒吸湿膨胀会让能见度进一步下降
+  // ③ 湿度修正：颗粒吸湿膨胀会让能见度下降，但别过度打折
+  //    （旧版 75–85% 就打 0.9 折，叠在新表之前等于双重压低）
   if (rh != null && isFinite(rh)) {
-    if (rh >= 95) v *= 0.55;
-    else if (rh >= 90) v *= 0.65;
-    else if (rh >= 85) v *= 0.78;
-    else if (rh >= 75) v *= 0.9;
+    if (rh >= 95) v *= 0.6;
+    else if (rh >= 90) v *= 0.75;
+    else if (rh >= 85) v *= 0.87;
+    else if (rh >= 80) v *= 0.95;
   }
 
   return Math.max(0.3, Math.round(v * 10) / 10);
@@ -2635,7 +2681,8 @@ function aerosolCard() {
     + '<div class="trMain"><b style="color:' + visLv.color + '">'
       + (visKm == null ? '—' : ((visInfo.atLeast ? '≥' : '') + visKm.toFixed(1))) + '</b>'
     + '<span>能见度 km · ' + visLv.name
-      + (metar ? '（实测 ' + metar.station + (visInfo.atLeast ? ' ≥' + visInfo.floor.toFixed(1) + ' km' : '') + '）' : '（推算）')
+      + (visInfo.atLeast ? ' ≥' + visInfo.floor.toFixed(1) + ' km' : '')
+      + (metar ? '（实测 ' + metar.station + '）' : '（' + visSrcText(visInfo.src) + '）')
     + '</span></div>'
     + '<div class="trAod"><b style="color:' + aodLv.color + '">' + (aod == null ? '—' : aod.toFixed(2)) + '</b>'
     + '<span>AOD · ' + aodLv.name + '</span></div>'
@@ -4084,9 +4131,10 @@ function renderWind() {
 
 
 /* ---------- 版本与更新记录 ---------- */
-var APP_VERSION = '1.19';
+var APP_VERSION = '1.20';
 /* 日期一律以实际发版当天为准；写之前先看系统时间，别猜 */
 var CHANGELOG = [
+  { v:'1.20', d:'2026-11-03', items:['能见度推算重标定：PM2.5→能见度对照表整体偏低一档（51.7 被算成 8.3 km，实况 15~18 km），已按实测重标', '湿度惩罚放缓，不再对低值二次打折', '没有机场实测时，用模型能见度与推算值互相校验，并标注来源「实测 / 模型 / 推算」'] },
   { v:'1.19', d:'2026-11-03', items:['能见度口径统一：首页和拍摄要素以前显示模型原始值（14.5 km），空气页却是推算值（7.6 km）；现在统一成「实测优先、否则推算」并标明来源', '概率等级新增最低档「不烧」：20 分以下不再笼统叫微烧'] },
   { v:'1.18', d:'2026-11-03', items:['首页与卡片统一显示口径：一律「概率% · 大烧/中烧/小烧/微烧」，不再一处写分数分一处写概率'] },
   { v:'1.17', d:'2026-11-03', items:['修复混合概率算错天：日出/日落过后卡片顺延到明天，但混合仍按今天算，导致永远显示 3-4%（和单模式、各源数字都对不上）', '混合概率的口径统一成「各源概率的平均」，圈上的数和下面「各源 x%」严格对得上'] },
