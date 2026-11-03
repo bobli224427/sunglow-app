@@ -509,7 +509,7 @@
   <img class="spIcon" src="icon.png" alt="">
   <div class="spName">Sunglow</div>
   <div class="spSub">朝霞 · 晚霞 · 火烧云</div>
-  <div class="spVer" id="spVer">v1.16</div>
+  <div class="spVer" id="spVer">v1.17</div>
 </div>
 
 <script>
@@ -541,7 +541,7 @@
 <header>
   <div>
     <h1>Sunglow</h1>
-    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.16</div>
+    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.17</div>
   </div>
   <div class="hbtns">
     <button class="locBtn" id="locBtn">
@@ -625,7 +625,7 @@
 
     <div class="card">
       <h2>关于</h2>
-      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.16</b></div>
+      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.17</b></div>
       <div class="kv"><span>开发者</span><b>DeepSeek · BobLi（只提要求）</b></div>
       <div class="kv"><span>联系 QQ</span><b id="qqCopy" class="copyQQ">3253132384</b></div>
       <div class="kv"><span>网页版</span><a class="link" href="https://bobli224427.github.io/sunglow-app/">bobli224427.github.io/sunglow-app</a></div>
@@ -1172,9 +1172,10 @@ function dateLabel(iso) {
   return md + (tag ? ' · ' + tag : '');
 }
 
-function cardHTML(kind, when, score, m) {
+function cardHTML(kind, when, score, m, dayIdx, probOverride) {
   var g = burnGrade(score), isDawn = kind === 'dawn';
-  var en = (S.model === 'mix') ? ensemble(isDawn ? 'dawn' : 'dusk') : null;
+  // 三源明细必须和卡片同一天，否则「各源 x%」和圈上的数会互相矛盾
+  var en = (S.model === 'mix') ? ensemble(isDawn ? 'dawn' : 'dusk', dayIdx) : null;
   var srcLine = '';
   if (!en) {
     srcLine = '<div class="srcTag">' + (S.model === 'mix' ? '混合模式（等待数据）' : (modelOf(S.model).name + ' 单模式')) + '</div>';
@@ -1187,7 +1188,9 @@ function cardHTML(kind, when, score, m) {
     var only = real.length < 2 ? '　（另一源缺失，暂按单源）' : '';
     srcLine = '<div class="srcTag">综合 ' + real.length + ' 源（各 ' + each + '%）：' + bits + only + '</div>';
   }
-  var prob = probOf(score);
+  // 混合模式下用「各源概率的平均」当圈上的数，和下面「各源 x%」那行严格对得上；
+  // 单模式没有传 probOverride，就走 probOf(分数)。
+  var prob = (typeof probOverride === 'number') ? probOverride : probOf(score);
   return '<div class="skyCard ' + kind + '">'
     + '<div class="skyHead"><div>'
     + '<div class="skyTitle">' + (isDawn ? '朝霞' : '晚霞') + '预报</div>'
@@ -1286,8 +1289,8 @@ function render() {
   if (S.data && S.model !== 'mix') S.models[S.model] = S.data;
   loadOtherModels();
 
-  var enD = (S.model === 'mix') ? ensemble('dawn') : null;
-  var enS = (S.model === 'mix') ? ensemble('dusk') : null;
+  var enD = (S.model === 'mix') ? ensemble('dawn', IX.dawn) : null;
+  var enS = (S.model === 'mix') ? ensemble('dusk', IX.dusk) : null;
 
   // 混合模式：两模式分数各占 50%，缺一路就用另一路
   // 混合概率：各模式概率的加权平均
@@ -1332,8 +1335,8 @@ function render() {
   }).join('');
 
   $('content').innerHTML =
-    cardHTML('dawn', dl.sunrise[IX.dawn], sD, md) +
-    cardHTML('dusk', dl.sunset[IX.dusk], sS, ms) +
+    cardHTML('dawn', dl.sunrise[IX.dawn], sD, md, IX.dawn, mixMode ? mixD.prob : null) +
+    cardHTML('dusk', dl.sunset[IX.dusk], sS, ms, IX.dusk, mixMode ? mixS.prob : null) +
     '<div class="listCard">' + rows + '</div>' +
     shootCard(dl.sunrise[IX.dawn], md, sD, true) +
     shootCard(dl.sunset[IX.dusk], ms, sS, false);
@@ -3199,24 +3202,31 @@ function modelOf(k) {
   return MODELS[0];
 }
 
-function localScoreOfModel(d) {
-  if (!d || !d.hourly) return null;
+/* 单个模式在第 dayIdx 天的朝/晚分。
+   注意：dayIdx 必须和卡片上显示的「第几次日出/日落」一致。
+   老代码写死 0（今天），而卡片在日出/日落过了之后会顺延到明天，
+   于是混合概率算的是今天、卡片显示的是明天 —— 就是「卡在 3、和混合数据对不上」的根因。 */
+function localScoreOfModel(d, dayIdx) {
+  if (!d || !d.hourly || !d.daily) return null;
+  var i = Number(dayIdx) || 0;
+  if (i >= d.daily.time.length) return null;
   var h = d.hourly, dl = d.daily;
-  var md = metricsAt(h, dl.time[0], nearestHour(dl.sunrise[0]));
-  var ms = metricsAt(h, dl.time[0], nearestHour(dl.sunset[0]));
+  var md = metricsAt(h, dl.time[i], nearestHour(dl.sunrise[i]));
+  var ms = metricsAt(h, dl.time[i], nearestHour(dl.sunset[i]));
   return {
-    dawn: scoreOf(md, geometryAdjust(dl.sunrise[0], cloudProfile(md).base, S.lat, S.lon, true).adj),
-    dusk: scoreOf(ms, geometryAdjust(dl.sunset[0], cloudProfile(ms).base, S.lat, S.lon, false).adj)
+    dawn: scoreOf(md, geometryAdjust(dl.sunrise[i], cloudProfile(md).base, S.lat, S.lon, true).adj),
+    dusk: scoreOf(ms, geometryAdjust(dl.sunset[i], cloudProfile(ms).base, S.lat, S.lon, false).adj)
   };
 }
 
-function ensemble(which) {
+/* 三源综合：which = 'dawn' | 'dusk'，dayIdx = 第几天（跟卡片一致） */
+function ensemble(which, dayIdx) {
   var parts = [];
   if (S.tp && TP_W > 0) parts.push({ name:'Golden Hour', v: S.tp.score, w: TP_W });
   MODELS.forEach(function (m) {
     var d = S.models[m.k];
     if (!d) return;
-    var sc = localScoreOfModel(d);
+    var sc = localScoreOfModel(d, dayIdx);
     if (!sc) return;
     parts.push({ name: m.name, v: sc[which], w: m.w });
   });
@@ -4062,9 +4072,10 @@ function renderWind() {
 
 
 /* ---------- 版本与更新记录 ---------- */
-var APP_VERSION = '1.16';
+var APP_VERSION = '1.17';
 /* 日期一律以实际发版当天为准；写之前先看系统时间，别猜 */
 var CHANGELOG = [
+  { v:'1.17', d:'2026-11-03', items:['修复混合概率算错天：日出/日落过后卡片顺延到明天，但混合仍按今天算，导致永远显示 3-4%（和单模式、各源数字都对不上）', '混合概率的口径统一成「各源概率的平均」，圈上的数和下面「各源 x%」严格对得上'] },
   { v:'1.16', d:'2026-11-03', items:['请求改成硬超时：底层网络不响应中断时也不会卡在「正在刷新…」', '全部源失败且没有旧数据时给出失败卡，点「重试」能真的恢复', '断网时用本地缓存兜底，并标明哪些源失败'] },
   { v:'1.15', d:'2026-11-03', items:[
     '重做预报取数：混合模式下 GFS/ICON 以前只在首次取一次，之后怎么刷新都是旧数据，概率卡住不动；现在每次刷新三源全部重取',
