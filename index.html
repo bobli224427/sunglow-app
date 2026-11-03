@@ -509,7 +509,7 @@
   <img class="spIcon" src="icon.png" alt="">
   <div class="spName">Sunglow</div>
   <div class="spSub">朝霞 · 晚霞 · 火烧云</div>
-  <div class="spVer" id="spVer">v1.15</div>
+  <div class="spVer" id="spVer">v1.16</div>
 </div>
 
 <script>
@@ -541,7 +541,7 @@
 <header>
   <div>
     <h1>Sunglow</h1>
-    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.15</div>
+    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.16</div>
   </div>
   <div class="hbtns">
     <button class="locBtn" id="locBtn">
@@ -625,7 +625,7 @@
 
     <div class="card">
       <h2>关于</h2>
-      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.15</b></div>
+      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.16</b></div>
       <div class="kv"><span>开发者</span><b>DeepSeek · BobLi（只提要求）</b></div>
       <div class="kv"><span>联系 QQ</span><b id="qqCopy" class="copyQQ">3253132384</b></div>
       <div class="kv"><span>网页版</span><a class="link" href="https://bobli224427.github.io/sunglow-app/">bobli224427.github.io/sunglow-app</a></div>
@@ -1460,7 +1460,8 @@ function neededModels() {
 
 function errText(e) {
   var m = String((e && e.message) || e || '');
-  if (/abort/i.test(m)) return '超时';
+  if (/abort/i.test(m)) return '已中断';
+  if (/超时|timeout/i.test(m)) return '超时';
   if (/429|too many/i.test(m)) return '请求太频繁';
   if (/HTTP 5/.test(m)) return '服务端错误';
   return m || '网络异常';
@@ -1512,6 +1513,23 @@ function fetchOneModel(k, signal) {
       if (!j || j.error || !j.hourly || !j.daily) throw new Error('数据不完整');
       return j;
     });
+}
+
+/* 硬超时：不依赖 fetch 会不会老实响应 abort。
+   曾经踩过：中间层把 fetch 包住后 abort 不生效，请求永不返回，界面就一直「正在刷新…」。 */
+function withTimeout(promise, ms, label) {
+  return new Promise(function (resolve, reject) {
+    var done = false;
+    var t = setTimeout(function () {
+      if (done) return;
+      done = true;
+      reject(new Error((label || '请求') + '超时'));
+    }, ms);
+    promise.then(
+      function (v) { if (!done) { done = true; clearTimeout(t); resolve(v); } },
+      function (e) { if (!done) { done = true; clearTimeout(t); reject(e); } }
+    );
+  });
 }
 
 function safeRender() {
@@ -1569,7 +1587,8 @@ function refreshForecast(opt) {
   }, FORECAST_TIMEOUT + 2000);
 
   var jobs = keys.map(function (k) {
-    return fetchOneModel(k, ctl.signal).then(
+    // 每个源都套一层硬超时：底层即使不响应 abort，这里也一定会 settle
+    return withTimeout(fetchOneModel(k, ctl.signal), FORECAST_TIMEOUT, k).then(
       function (data) { return { k: k, ok: true, data: data }; },
       function (err) { return { k: k, ok: false, msg: errText(err) }; }
     );
@@ -4043,9 +4062,10 @@ function renderWind() {
 
 
 /* ---------- 版本与更新记录 ---------- */
-var APP_VERSION = '1.15';
+var APP_VERSION = '1.16';
 /* 日期一律以实际发版当天为准；写之前先看系统时间，别猜 */
 var CHANGELOG = [
+  { v:'1.16', d:'2026-11-03', items:['请求改成硬超时：底层网络不响应中断时也不会卡在「正在刷新…」', '全部源失败且没有旧数据时给出失败卡，点「重试」能真的恢复', '断网时用本地缓存兜底，并标明哪些源失败'] },
   { v:'1.15', d:'2026-11-03', items:[
     '重做预报取数：混合模式下 GFS/ICON 以前只在首次取一次，之后怎么刷新都是旧数据，概率卡住不动；现在每次刷新三源全部重取',
     '新增取数状态条：一眼看到「更新于 HH:MM」，某个源失败会标出来，数据超过 15 分钟会提示偏旧',
