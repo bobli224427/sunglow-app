@@ -509,7 +509,7 @@
   <img class="spIcon" src="icon.png" alt="">
   <div class="spName">Sunglow</div>
   <div class="spSub">朝霞 · 晚霞 · 火烧云</div>
-  <div class="spVer" id="spVer">v1.17</div>
+  <div class="spVer" id="spVer">v1.18</div>
 </div>
 
 <script>
@@ -541,7 +541,7 @@
 <header>
   <div>
     <h1>Sunglow</h1>
-    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.17</div>
+    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.18</div>
   </div>
   <div class="hbtns">
     <button class="locBtn" id="locBtn">
@@ -625,7 +625,7 @@
 
     <div class="card">
       <h2>关于</h2>
-      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.17</b></div>
+      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.18</b></div>
       <div class="kv"><span>开发者</span><b>DeepSeek · BobLi（只提要求）</b></div>
       <div class="kv"><span>联系 QQ</span><b id="qqCopy" class="copyQQ">3253132384</b></div>
       <div class="kv"><span>网页版</span><a class="link" href="https://bobli224427.github.io/sunglow-app/">bobli224427.github.io/sunglow-app</a></div>
@@ -1341,14 +1341,21 @@ function render() {
     shootCard(dl.sunrise[IX.dawn], md, sD, true) +
     shootCard(dl.sunset[IX.dusk], ms, sS, false);
 
-  var gD = gradeOf(sD), gS = gradeOf(sS);
-  var best = sD >= sS ? { t:'朝霞', s:sD, time:dl.sunrise[IX.dawn] } : { t:'晚霞', s:sS, time:dl.sunset[IX.dusk] };
+  // 统一显示口径：一律「概率% · 大烧/中烧/小烧/微烧」，和卡片圈上、三源明细同一套词。
+  // 以前这里显示「分数 分 · 值得一看」，和下面的「61% · 小烧」是两套等级，看着像对不上。
+  var probDisp = function (score, which) {
+    return mixMode ? (which === 'dawn' ? (S.probD || 0) : (S.probS || 0)) : probOf(score);
+  };
+  var best = sD >= sS
+    ? { t:'朝霞', s:sD, p:probDisp(sD, 'dawn'), time:dl.sunrise[IX.dawn] }
+    : { t:'晚霞', s:sS, p:probDisp(sS, 'dusk'), time:dl.sunset[IX.dusk] };
   $('homeName').textContent = S.name;
-  $('homeSub').textContent = '下一次最佳：' + best.t + ' ' + best.s + ' 分 · ' + dateLabel(best.time).split(' · ')[1] + ' ' + best.time.slice(11,16);
+  $('homeSub').textContent = '下一次最佳：' + best.t + ' ' + best.p + '% · ' + burnGrade(best.s).name
+    + ' · ' + dateLabel(best.time).split(' · ')[1] + ' ' + best.time.slice(11,16);
   $('homeSummary').innerHTML =
     '<div class="card"><h2>接下来</h2>'
-    + '<div class="row"><span>朝霞 · 日出 ' + dl.sunrise[IX.dawn].slice(11,16) + '（' + dateLabel(dl.sunrise[IX.dawn]).split(' · ')[1] + '）</span><b>' + sD + ' 分 · ' + gD.name + '</b></div>'
-    + '<div class="row"><span>晚霞 · 日落 ' + dl.sunset[IX.dusk].slice(11,16) + '（' + dateLabel(dl.sunset[IX.dusk]).split(' · ')[1] + '）</span><b>' + sS + ' 分 · ' + gS.name + '</b></div>'
+    + '<div class="row"><span>朝霞 · 日出 ' + dl.sunrise[IX.dawn].slice(11,16) + '（' + dateLabel(dl.sunrise[IX.dawn]).split(' · ')[1] + '）</span><b>' + probDisp(sD, 'dawn') + '% · ' + burnGrade(sD).name + '</b></div>'
+    + '<div class="row"><span>晚霞 · 日落 ' + dl.sunset[IX.dusk].slice(11,16) + '（' + dateLabel(dl.sunset[IX.dusk]).split(' · ')[1] + '）</span><b>' + probDisp(sS, 'dusk') + '% · ' + burnGrade(sS).name + '</b></div>'
     + '<div class="row"><span>今日最高概率</span><b style="color:' + burnGrade(Math.max(sD, sS)).color + '">'
       + Math.max(S.probD || 0, S.probS || 0) + '% · ' + burnGrade(Math.max(sD, sS)).name + '</b></div>'
     + '<div class="row"><span>降水概率 / 雨量</span><b>' + Math.round(md.pop || 0) + '% / '
@@ -4072,9 +4079,10 @@ function renderWind() {
 
 
 /* ---------- 版本与更新记录 ---------- */
-var APP_VERSION = '1.17';
+var APP_VERSION = '1.18';
 /* 日期一律以实际发版当天为准；写之前先看系统时间，别猜 */
 var CHANGELOG = [
+  { v:'1.18', d:'2026-11-03', items:['首页与卡片统一显示口径：一律「概率% · 大烧/中烧/小烧/微烧」，不再一处写分数分一处写概率'] },
   { v:'1.17', d:'2026-11-03', items:['修复混合概率算错天：日出/日落过后卡片顺延到明天，但混合仍按今天算，导致永远显示 3-4%（和单模式、各源数字都对不上）', '混合概率的口径统一成「各源概率的平均」，圈上的数和下面「各源 x%」严格对得上'] },
   { v:'1.16', d:'2026-11-03', items:['请求改成硬超时：底层网络不响应中断时也不会卡在「正在刷新…」', '全部源失败且没有旧数据时给出失败卡，点「重试」能真的恢复', '断网时用本地缓存兜底，并标明哪些源失败'] },
   { v:'1.15', d:'2026-11-03', items:[
