@@ -509,7 +509,7 @@
   <img class="spIcon" src="icon.png" alt="">
   <div class="spName">Sunglow</div>
   <div class="spSub">朝霞 · 晚霞 · 火烧云</div>
-  <div class="spVer" id="spVer">v1.18</div>
+  <div class="spVer" id="spVer">v1.19</div>
 </div>
 
 <script>
@@ -541,7 +541,7 @@
 <header>
   <div>
     <h1>Sunglow</h1>
-    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.18</div>
+    <div class="ver">朝霞 · 晚霞 · 火烧云 · v1.19</div>
   </div>
   <div class="hbtns">
     <button class="locBtn" id="locBtn">
@@ -625,7 +625,7 @@
 
     <div class="card">
       <h2>关于</h2>
-      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.18</b></div>
+      <div class="kv"><span>版本</span><b id="verTap" data-verify="1">1.19</b></div>
       <div class="kv"><span>开发者</span><b>DeepSeek · BobLi（只提要求）</b></div>
       <div class="kv"><span>联系 QQ</span><b id="qqCopy" class="copyQQ">3253132384</b></div>
       <div class="kv"><span>网页版</span><a class="link" href="https://bobli224427.github.io/sunglow-app/">bobli224427.github.io/sunglow-app</a></div>
@@ -1216,9 +1216,12 @@ function shootCard(sun, m, score, isDawn) {
   var bg = burnGrade(score);
   var label = isDawn ? '朝霞' : '晚霞';
 
-  var visText = (S.now && S.now.visibility != null)
-    ? (S.now.visibility / 1000).toFixed(1) + ' km · ' + visLevel(S.now.visibility).name
-    : '—';
+  // 与空气页/首页同源：实测优先，取不到才推算；不再直接显示模型原始值
+  var visInfoCard = visNow();
+  var visText = (visInfoCard.km == null)
+    ? '—'
+    : (visInfoCard.atLeast ? '≥' : '') + visInfoCard.km.toFixed(1) + ' km · '
+      + visLevel(visInfoCard.km * 1000).name + (visInfoCard.src === 'metar' ? ' 实测' : ' 推算');
   var aodText = (S.airNow && S.airNow.aerosol_optical_depth != null)
     ? S.airNow.aerosol_optical_depth.toFixed(2) + ' · ' + aodLevel(S.airNow.aerosol_optical_depth).name
     : '—';
@@ -1363,15 +1366,16 @@ function render() {
     + '<div class="row"><span>高云 / 中云 / 低云</span><b>' + Math.round(md.high) + '% / ' + Math.round(md.mid) + '% / ' + Math.round(md.low) + '%</b></div>'
     + (function () {
         if (!S.airNow || S.airNow.aerosol_optical_depth == null) return '';
-        var now2 = new Date();
-        var st2 = now2.getFullYear() + '-' + String(now2.getMonth()+1).padStart(2,'0') + '-' + String(now2.getDate()).padStart(2,'0') + 'T' + String(now2.getHours()).padStart(2,'0') + ':00';
-        var i2 = S.air.hourly.time.indexOf(st2); if (i2 < 0) i2 = 0;
         var aod2 = S.airNow.aerosol_optical_depth;
-        var vis2 = S.now ? S.now.visibility : null;
-        var lv2 = visLevel(vis2);
+        // 和空气页用同一个取值（实测优先 → 推算），别再拿模型原始 visibility 当观测值
+        var vNow2 = visNow();
+        var visM2 = vNow2.km == null ? null : vNow2.km * 1000;
+        var lv2 = visLevel(visM2);
         var lv3 = aodLevel(aod2);
         return '<div class="row"><span>能见度 / 气溶胶</span><b>'
-          + (vis2 == null ? '—' : (vis2 / 1000).toFixed(1) + ' km · ' + lv2.name)
+          + (vNow2.km == null ? '—'
+              : (vNow2.atLeast ? '≥' : '') + vNow2.km.toFixed(1) + ' km · ' + lv2.name
+                + (vNow2.src === 'metar' ? ' 实测' : ' 推算'))
           + ' / AOD ' + (aod2 == null ? '—' : aod2.toFixed(2) + ' · ' + lv3.name) + '</b></div>';
       })()
     + '</div><div class="tip">数据来源：Open-Meteo（' + (S.model === 'gfs' ? 'GFS 美国模式' : 'ECMWF 欧洲模式') + '）· 评分由本地算法计算</div>';
@@ -3387,7 +3391,8 @@ function burnGrade(score) {
   if (score >= 80) return { name:'大烧', color:'#ff5a3c', desc:'整片天空会被点燃，最值得蹲的一场', tip:'整片天空会被点燃，最值得蹲的一场' };
   if (score >= 60) return { name:'中烧', color:'#ffb454', desc:'有明显火烧云，颜色层次不错', tip:'有明显火烧云，颜色层次不错' };
   if (score >= 40) return { name:'小烧', color:'#ffd666', desc:'局部会出颜色，碰运气可以看', tip:'局部会出颜色，碰运气可以看' };
-  return { name:'微烧', color:'#9fb0c4', desc:'颜色很淡或基本没有', tip:'颜色很淡或基本没有' };
+  if (score >= 20) return { name:'微烧', color:'#9fb0c4', desc:'颜色很淡，肉眼几乎看不出', tip:'颜色很淡，肉眼几乎看不出' };
+  return { name:'不烧', color:'#6b7280', desc:'没有火烧云，灰天一场', tip:'没有火烧云，灰天一场' };
 }
 
 function skyGrade(tr) {
@@ -4079,9 +4084,10 @@ function renderWind() {
 
 
 /* ---------- 版本与更新记录 ---------- */
-var APP_VERSION = '1.18';
+var APP_VERSION = '1.19';
 /* 日期一律以实际发版当天为准；写之前先看系统时间，别猜 */
 var CHANGELOG = [
+  { v:'1.19', d:'2026-11-03', items:['能见度口径统一：首页和拍摄要素以前显示模型原始值（14.5 km），空气页却是推算值（7.6 km）；现在统一成「实测优先、否则推算」并标明来源', '概率等级新增最低档「不烧」：20 分以下不再笼统叫微烧'] },
   { v:'1.18', d:'2026-11-03', items:['首页与卡片统一显示口径：一律「概率% · 大烧/中烧/小烧/微烧」，不再一处写分数分一处写概率'] },
   { v:'1.17', d:'2026-11-03', items:['修复混合概率算错天：日出/日落过后卡片顺延到明天，但混合仍按今天算，导致永远显示 3-4%（和单模式、各源数字都对不上）', '混合概率的口径统一成「各源概率的平均」，圈上的数和下面「各源 x%」严格对得上'] },
   { v:'1.16', d:'2026-11-03', items:['请求改成硬超时：底层网络不响应中断时也不会卡在「正在刷新…」', '全部源失败且没有旧数据时给出失败卡，点「重试」能真的恢复', '断网时用本地缓存兜底，并标明哪些源失败'] },
